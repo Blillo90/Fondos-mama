@@ -16,37 +16,54 @@ const TARGET_FUNDS = [
   { id: 'sabadell-prudente-residual', name: 'Sabadell Prudente (residual)', isin: 'ES0111187003', weight: 5.2 },
 ]
 
-const MS_UNIVERSE = 'FOGBR$ALL|FOESP$ALL|FOIRL$ALL|FOLUX$ALL|FOFRA$ALL|FOEUR$ALL'
-const MS_DATA_POINTS = 'SecId,LegalName,ClosePrice,ClosePriceDate,DayReturn,OneDayReturn,Currency,ISIN'
+const YAHOO_HEADERS = {
+  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+  'Accept': 'application/json',
+  'Accept-Language': 'es-ES,es;q=0.9',
+}
 
-async function fetchMorningstarPrice(isin: string): Promise<{ nav: number | null; dailyReturn: number | null; date: string | null }> {
-  const url = `https://lt.morningstar.com/api/rest.svc/klr5zyak8x/security/screener?page=1&pageSize=1&sortOrder=LegalName+asc&outputType=json&version=1&languageId=es-ES&currencyId=EUR&universeIds=${MS_UNIVERSE}&securityDataPoints=${MS_DATA_POINTS}&term=${isin}`
+async function fetchYahooPrice(isin: string): Promise<{ nav: number | null; dailyReturn: number | null; date: string | null; symbol?: string }> {
+  // Step 1: find ticker by ISIN
+  const searchUrl = `https://query1.finance.yahoo.com/v1/finance/search?q=${isin}&lang=es-ES&region=ES&quotesCount=6&newsCount=0&listsCount=0`
 
-  const res = await fetch(url, {
-    headers: {
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-      'Accept': 'application/json',
-      'Referer': 'https://www.morningstar.es/',
-    },
-    next: { revalidate: 0 },
-  })
+  let symbol: string | null = null
+  try {
+    const searchRes = await fetch(searchUrl, { headers: YAHOO_HEADERS, next: { revalidate: 0 } })
+    if (searchRes.ok) {
+      const json = await searchRes.json()
+      const quotes: { symbol: string; quoteType?: string }[] = json?.quotes ?? []
+      const match =
+        quotes.find((q) => q.quoteType === 'MUTUALFUND') ??
+        quotes.find((q) => q.quoteType === 'ETF') ??
+        quotes[0]
+      symbol = match?.symbol ?? null
+    }
+  } catch {
+    return { nav: null, dailyReturn: null, date: null }
+  }
 
-  if (!res.ok) return { nav: null, dailyReturn: null, date: null }
+  if (!symbol) return { nav: null, dailyReturn: null, date: null }
 
-  const json = await res.json()
-  const rows: unknown[] = json?.rows ?? []
-  if (rows.length === 0) return { nav: null, dailyReturn: null, date: null }
+  // Step 2: fetch quote details
+  try {
+    const quoteUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?interval=1d&range=5d&includeAdjustedClose=false`
+    const quoteRes = await fetch(quoteUrl, { headers: YAHOO_HEADERS, next: { revalidate: 0 } })
+    if (!quoteRes.ok) return { nav: null, dailyReturn: null, date: null, symbol }
 
-  const row = rows[0] as Record<string, unknown>
-  const nav = typeof row.ClosePrice === 'number' ? row.ClosePrice : null
-  const dailyReturn = typeof row.OneDayReturn === 'number'
-    ? row.OneDayReturn
-    : typeof row.DayReturn === 'number'
-    ? row.DayReturn
-    : null
-  const date = typeof row.ClosePriceDate === 'string' ? row.ClosePriceDate : null
+    const quoteData = await quoteRes.json()
+    const meta = quoteData?.chart?.result?.[0]?.meta
+    if (!meta) return { nav: null, dailyReturn: null, date: null, symbol }
 
-  return { nav, dailyReturn, date }
+    const nav: number | null = meta.regularMarketPrice ?? null
+    const prev: number | null = meta.chartPreviousClose ?? meta.previousClose ?? null
+    const dailyReturn = nav !== null && prev ? ((nav - prev) / prev) * 100 : null
+    const ts: number | null = meta.regularMarketTime ?? null
+    const date = ts ? new Date(ts * 1000).toISOString().split('T')[0] : null
+
+    return { nav, dailyReturn, date, symbol }
+  } catch {
+    return { nav: null, dailyReturn: null, date: null, symbol }
+  }
 }
 
 export async function GET() {
@@ -57,13 +74,14 @@ export async function GET() {
     nav: number | null
     dailyReturn: number | null
     date: string | null
+    symbol?: string
     error?: string
   }[] = []
 
   await Promise.all(
     TARGET_FUNDS.map(async (fund) => {
       try {
-        const data = await fetchMorningstarPrice(fund.isin)
+        const data = await fetchYahooPrice(fund.isin)
         results.push({ id: fund.id, name: fund.name, isin: fund.isin, ...data })
       } catch {
         results.push({ id: fund.id, name: fund.name, isin: fund.isin, nav: null, dailyReturn: null, date: null, error: 'Fetch failed' })
