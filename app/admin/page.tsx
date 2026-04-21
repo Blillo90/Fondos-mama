@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import SectionHeader from '@/components/ui/SectionHeader'
-import { Save, Info } from 'lucide-react'
+import { Save, Info, RefreshCw, CheckCircle, AlertCircle } from 'lucide-react'
 
 const TARGET_FUNDS = [
   { id: 'nb-short-duration', name: 'NB Short Duration Bond', isin: 'IE00BFZMJT78', weight: 20.7 },
@@ -26,8 +26,50 @@ export default function AdminPage() {
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState('')
+  const [fetching, setFetching] = useState(false)
+  const [fetchResults, setFetchResults] = useState<{ id: string; name: string; nav: number | null; dailyReturn: number | null; date: string | null; error?: string }[] | null>(null)
+  const [fetchError, setFetchError] = useState('')
 
   const objetivoTotal = Object.values(objetivoValues).reduce((s, v) => s + (parseFloat(v) || 0), 0)
+
+  const handleFetchPrices = async () => {
+    setFetching(true)
+    setFetchError('')
+    setFetchResults(null)
+    try {
+      const res = await fetch('/api/fetch-prices')
+      if (!res.ok) throw new Error('Error al obtener precios')
+      const data = await res.json()
+      const results = data.results as { id: string; name: string; nav: number | null; dailyReturn: number | null; date: string | null; error?: string }[]
+      setFetchResults(results)
+      // Auto-populate inputs with fetched NAV values (€ amount = NAV × units; since we don't track units,
+      // we use the portfolio weight × total to estimate value — or we just show NAV and let user verify)
+      // Instead we store % daily return and pre-fill with previous value × (1 + dailyReturn%)
+      const newValues: Record<string, string> = {}
+      results.forEach((r) => {
+        if (r.nav !== null) {
+          const fund = TARGET_FUNDS.find((f) => f.id === r.id)
+          if (fund) {
+            // Estimate fund value from weight if no previous value set
+            const prev = parseFloat(objetivoValues[r.id] ?? '')
+            if (!isNaN(prev) && prev > 0 && r.dailyReturn !== null) {
+              newValues[r.id] = (prev * (1 + r.dailyReturn / 100)).toFixed(2)
+            } else if (isNaN(prev) || prev === 0) {
+              // Use weight-based estimate as placeholder
+              newValues[r.id] = (91664.82 * fund.weight / 100).toFixed(2)
+            }
+          }
+        }
+      })
+      if (Object.keys(newValues).length > 0) {
+        setObjetivoValues((prev) => ({ ...prev, ...newValues }))
+      }
+    } catch (e: unknown) {
+      setFetchError(e instanceof Error ? e.message : 'Error al obtener precios')
+    } finally {
+      setFetching(false)
+    }
+  }
 
   const handleSave = async () => {
     if (!date) { setError('Selecciona una fecha'); return }
@@ -105,11 +147,62 @@ export default function AdminPage() {
         </div>
       </div>
 
+      {/* Auto-fetch prices */}
+      <div className="bg-white border border-gray-200 rounded-xl p-5">
+        <SectionHeader
+          title="Obtener Precios Automáticamente"
+          subtitle="Consulta el valor liquidativo actual de cada fondo desde Morningstar"
+        />
+        <div className="flex items-center gap-4 flex-wrap">
+          <button
+            onClick={handleFetchPrices}
+            disabled={fetching}
+            className="flex items-center gap-2 bg-emerald-600 text-white px-5 py-2.5 rounded-lg font-medium hover:bg-emerald-700 transition-colors disabled:opacity-50 text-sm"
+          >
+            <RefreshCw size={15} className={fetching ? 'animate-spin' : ''} />
+            {fetching ? 'Obteniendo precios...' : 'Obtener VL automáticamente'}
+          </button>
+          <span className="text-xs text-gray-400">Los fondos publican el VL con 1–2 días hábiles de retraso</span>
+        </div>
+
+        {fetchError && (
+          <div className="mt-3 flex items-center gap-2 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg p-3">
+            <AlertCircle size={15} /> {fetchError}
+          </div>
+        )}
+
+        {fetchResults && (
+          <div className="mt-4 space-y-2">
+            {fetchResults.map((r) => (
+              <div key={r.id} className="flex items-center justify-between text-sm border-b border-gray-100 pb-2">
+                <span className="text-gray-700 truncate flex-1">{r.name}</span>
+                {r.nav !== null ? (
+                  <div className="flex items-center gap-3 ml-2">
+                    <span className="font-mono text-gray-900">{r.nav.toFixed(4)} €</span>
+                    {r.dailyReturn !== null && (
+                      <span className={`text-xs font-semibold ${r.dailyReturn >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                        {r.dailyReturn >= 0 ? '+' : ''}{r.dailyReturn.toFixed(2)}%
+                      </span>
+                    )}
+                    <CheckCircle size={14} className="text-emerald-500" />
+                  </div>
+                ) : (
+                  <span className="text-xs text-gray-400 ml-2">No disponible</span>
+                )}
+              </div>
+            ))}
+            <p className="text-xs text-gray-400 pt-1">
+              Los valores de la cartera objetivo se han actualizado en los campos de abajo usando el cambio diario.
+            </p>
+          </div>
+        )}
+      </div>
+
       {/* Cartera Objetivo */}
       <div className="bg-white border border-gray-200 rounded-xl p-5">
         <SectionHeader
           title="Cartera Objetivo"
-          subtitle="Valor actual de cada fondo objetivo (consultar en Morningstar o Sabadell)"
+          subtitle="Valor actual de cada fondo objetivo (consultar en Morningstar o usar el botón de arriba)"
         />
         <div className="space-y-3">
           {TARGET_FUNDS.map((f) => (
