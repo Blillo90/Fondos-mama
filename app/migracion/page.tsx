@@ -8,7 +8,7 @@ import { CheckCircle2, Clock, Info } from 'lucide-react'
 
 async function getTransfers(): Promise<Transfer[]> {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL
-  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY
   if (!url || !key) return []
   const supabase = createClient(url, key)
   const { data } = await supabase
