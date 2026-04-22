@@ -26,7 +26,7 @@ export async function POST(req: NextRequest) {
     }
 
     if (upserts.length > 0) {
-      const { error } = await supabase.from('portfolio_snapshots').upsert(upserts)
+      const { error } = await supabase.from('portfolio_snapshots').upsert(upserts, { onConflict: 'portfolio_id,date' })
       if (error) throw error
     }
 
@@ -41,7 +41,7 @@ export async function POST(req: NextRequest) {
       }))
 
     if (fundValues.length > 0) {
-      const { error } = await supabase.from('fund_values').upsert(fundValues)
+      const { error } = await supabase.from('fund_values').upsert(fundValues, { onConflict: 'fund_id,portfolio_id,date' })
       if (error) throw error
     }
 
