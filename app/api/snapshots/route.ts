@@ -47,7 +47,12 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ ok: true })
   } catch (e: unknown) {
-    const msg = e instanceof Error ? e.message : 'Error desconocido'
+    const msg =
+      e instanceof Error
+        ? e.message
+        : typeof e === 'object' && e !== null && 'message' in e
+          ? String((e as Record<string, unknown>).message)
+          : JSON.stringify(e)
     return NextResponse.json({ error: msg }, { status: 500 })
   }
 }
