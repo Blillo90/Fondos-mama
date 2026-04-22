@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import SectionHeader from '@/components/ui/SectionHeader'
-import { Save, Info, RefreshCw, CheckCircle, AlertCircle } from 'lucide-react'
+import { Save, Info, RefreshCw, CheckCircle, AlertCircle, ChevronDown, ChevronUp } from 'lucide-react'
 
 const TARGET_FUNDS = [
   { id: 'nb-short-duration', name: 'NB Short Duration Bond', isin: 'IE00BFZMJT78', weight: 20.7 },
@@ -19,10 +19,51 @@ const TARGET_FUNDS = [
   { id: 'sabadell-prudente-residual', name: 'Sabadell Prudente (residual)', isin: 'ES0111187003', weight: 5.2 },
 ]
 
+const ACTUAL_FUNDS = [
+  { id: 'sabadell-prudente',         name: 'Sabadell Prudente',                       isin: 'ES0111187003', initialAmount: 42977 },
+  { id: 'sabadell-rendimiento',      name: 'Sabadell Rendimiento',                    isin: 'ES0173829039', initialAmount: 13470 },
+  { id: 'sabadell-consolida-94',     name: 'Sabadell Consolida 94',                   isin: 'ES0111203008', initialAmount: 10450 },
+  { id: 'sabadell-interes-euro',     name: 'Sabadell Interés Euro',                   isin: 'ES0174403008', initialAmount: 4780 },
+  { id: 'sabadell-bonos-euro',       name: 'Sabadell Bonos Euro',                     isin: 'ES0173828007', initialAmount: 3136 },
+  { id: 'sabadell-sel-alternativa',  name: 'Sabadell Selección Alternativa',          isin: 'ES0182282014', initialAmount: 2174 },
+  { id: 'sabadell-euro-yield',       name: 'Sabadell Euro Yield',                     isin: 'ES0184976001', initialAmount: 1379 },
+  { id: 'bnp-enhanced-bond',         name: 'BNP Paribas Enhanced Bond 6M',            isin: 'LU0325598752', initialAmount: 929 },
+  { id: 'sabadell-bonos-flotantes',  name: 'Sabadell Bonos Flotantes Euro',           isin: 'ES0174356016', initialAmount: 788 },
+  { id: 'amundi-abs-responsible',    name: 'Amundi ABS Responsible',                  isin: 'FR0010319996', initialAmount: 742 },
+  { id: 'mg-european-credit',        name: 'M&G European Credit QI',                  isin: 'LU2188668326', initialAmount: 731 },
+  { id: 'eurizon-euro-bond',         name: 'Eurizon Fund II Euro Bond Z',             isin: 'LU0278427041', initialAmount: 707 },
+  { id: 'sabadell-estados-unidos',   name: 'Sabadell Estados Unidos Bolsa',           isin: 'ES0138983004', initialAmount: 657 },
+  { id: 'sabadell-bonos-sostenibles',name: 'Sabadell Bonos Sostenibles España',       isin: 'ES0158862021', initialAmount: 510 },
+  { id: 'axa-europe-high-yield',     name: 'AXA IM Europe SD High Yield',             isin: 'LU0658025209', initialAmount: 478 },
+  { id: 'muzinich-enhanced-yield',   name: 'Muzinich Enhanced Yield ST',              isin: 'IE00BYXHR262', initialAmount: 476 },
+  { id: 'generali-euro-bond',        name: 'Generali Euro Bond 1-3 Years G',         isin: 'LU1373301057', initialAmount: 406 },
+  { id: 'lazard-capital-sri',        name: 'Lazard Capital SRI SC',                   isin: 'FR0013311446', initialAmount: 329 },
+  { id: 'sabadell-dolar-fijo',       name: 'Sabadell Dólar Fijo',                     isin: 'ES0138950003', initialAmount: 317 },
+  { id: 'jpm-america-equity',        name: 'JPM America Equity',                      isin: 'LU1734444273', initialAmount: 294 },
+  { id: 'sabadell-emergente-mixto',  name: 'Sabadell Emergente Mixto Flexible',       isin: 'ES0105142006', initialAmount: 273 },
+  { id: 'axa-euro-credit-x',         name: 'AXA WF Euro Credit SD X',                isin: 'LU1601096537', initialAmount: 261 },
+  { id: 'axa-credit-sdi',            name: 'AXA WF Euro Credit SD I',                isin: 'LU0227127643', initialAmount: 259 },
+  { id: 'jpm-em-local',              name: 'JPM EM Local Currency Debt',              isin: 'LU0804757648', initialAmount: 215 },
+  { id: 'amundi-multi-strategy',     name: 'Amundi ABS Ret Multi-Strategy J',         isin: 'LU1882440925', initialAmount: 211 },
+  { id: 'sabadell-bolsas-emergentes',name: 'Sabadell Bolsas Emergentes',              isin: 'ES0175083007', initialAmount: 180 },
+  { id: 'sabadell-economia-digital', name: 'Sabadell Economía Digital',               isin: 'ES0138528015', initialAmount: 180 },
+  { id: 'amundi-us-research-value',  name: 'Amundi US Equity Research Value J21',    isin: 'LU2931223932', initialAmount: 152 },
+  { id: 'sabadell-europa-futuro',    name: 'Sabadell Europa Bolsa Futuro',            isin: 'ES0183339003', initialAmount: 128 },
+  { id: 'amundi-us-growth',          name: 'Amundi US Equity Fundamental Growth J2', isin: 'LU2732984955', initialAmount: 108 },
+  { id: 'alma-eikoh-japan',          name: 'Alma Eikoh Japan Large Cap Equity',       isin: 'LU1870374508', initialAmount: 102 },
+  { id: 'ct-us-contrarian',          name: 'CT Lux US Contrarian Core Equities ZE',  isin: 'LU0957798324', initialAmount: 78 },
+  { id: 'loomis-us-growth',          name: 'Loomis Sayles US Growth Equity S1',       isin: 'LU1435387458', initialAmount: 61 },
+  { id: 'ab-us-equity',              name: 'AB Select US Equity Portfolio S1',        isin: 'LU1764069099', initialAmount: 58 },
+  { id: 'amundi-commodities',        name: 'Amundi SF EUR Commodities R',             isin: 'LU1706853931', initialAmount: 54 },
+  { id: 'sabadell-economia-verde',   name: 'Sabadell Economía Verde',                 isin: 'ES0138529013', initialAmount: 53 },
+  { id: 'sabadell-espana-futuro',    name: 'Sabadell España Bolsa Futuro',            isin: 'ES0111092005', initialAmount: 3 },
+]
+
 export default function AdminPage() {
   const [date, setDate] = useState(new Date().toISOString().split('T')[0])
   const [objetivoValues, setObjetivoValues] = useState<Record<string, string>>({})
-  const [actualTotal, setActualTotal] = useState('')
+  const [actualFundValues, setActualFundValues] = useState<Record<string, string>>({})
+  const [showActualFunds, setShowActualFunds] = useState(false)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState('')
@@ -31,6 +72,7 @@ export default function AdminPage() {
   const [fetchError, setFetchError] = useState('')
 
   const objetivoTotal = Object.values(objetivoValues).reduce((s, v) => s + (parseFloat(v) || 0), 0)
+  const actualFundsTotal = Object.values(actualFundValues).reduce((s, v) => s + (parseFloat(v) || 0), 0)
 
   const handleFetchPrices = async () => {
     setFetching(true)
@@ -42,20 +84,15 @@ export default function AdminPage() {
       const data = await res.json()
       const results = data.results as { id: string; name: string; nav: number | null; dailyReturn: number | null; date: string | null; error?: string }[]
       setFetchResults(results)
-      // Auto-populate inputs with fetched NAV values (€ amount = NAV × units; since we don't track units,
-      // we use the portfolio weight × total to estimate value — or we just show NAV and let user verify)
-      // Instead we store % daily return and pre-fill with previous value × (1 + dailyReturn%)
       const newValues: Record<string, string> = {}
       results.forEach((r) => {
         if (r.nav !== null) {
           const fund = TARGET_FUNDS.find((f) => f.id === r.id)
           if (fund) {
-            // Estimate fund value from weight if no previous value set
             const prev = parseFloat(objetivoValues[r.id] ?? '')
             if (!isNaN(prev) && prev > 0 && r.dailyReturn !== null) {
               newValues[r.id] = (prev * (1 + r.dailyReturn / 100)).toFixed(2)
             } else if (isNaN(prev) || prev === 0) {
-              // Use weight-based estimate as placeholder
               newValues[r.id] = (91664.82 * fund.weight / 100).toFixed(2)
             }
           }
@@ -81,7 +118,8 @@ export default function AdminPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           date,
-          actualTotal: parseFloat(actualTotal) || 0,
+          actualTotal: actualFundsTotal > 0 ? actualFundsTotal : 0,
+          actualFundValues,
           objetivoValues,
           objetivoTotal,
         }),
@@ -129,29 +167,63 @@ export default function AdminPage() {
         />
       </div>
 
-      {/* Cartera Actual */}
+      {/* Cartera Actual - fondos individuales colapsable */}
       <div className="bg-white border border-gray-200 rounded-xl p-5">
-        <SectionHeader title="Cartera Actual" subtitle="Valor total de los fondos en Banco Sabadell" />
-        <div className="flex items-center gap-3">
-          <label className="text-sm text-gray-600 w-48">Valor total cartera actual</label>
-          <div className="relative">
-            <span className="absolute left-3 top-2 text-gray-400 text-sm">€</span>
-            <input
-              type="number"
-              value={actualTotal}
-              onChange={(e) => setActualTotal(e.target.value)}
-              placeholder="91664.82"
-              className="border border-gray-300 rounded-lg pl-7 pr-3 py-2 text-sm w-40 focus:outline-none focus:ring-2 focus:ring-blue-500 tabular-nums"
-            />
+        <button
+          onClick={() => setShowActualFunds(!showActualFunds)}
+          className="w-full flex items-center justify-between"
+        >
+          <div className="text-left">
+            <p className="font-semibold text-gray-800 text-sm">Cartera Actual · {ACTUAL_FUNDS.length} fondos</p>
+            <p className="text-xs text-gray-400 mt-0.5">Valor actual de cada fondo en Banco Sabadell</p>
           </div>
-        </div>
+          <div className="flex items-center gap-3">
+            {actualFundsTotal > 0 && (
+              <span className="text-sm font-semibold text-[#0f2c4f]">
+                {new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'EUR' }).format(actualFundsTotal)}
+              </span>
+            )}
+            {showActualFunds ? <ChevronUp size={18} className="text-gray-400" /> : <ChevronDown size={18} className="text-gray-400" />}
+          </div>
+        </button>
+
+        {showActualFunds && (
+          <div className="mt-4 space-y-3 border-t border-gray-100 pt-4">
+            {ACTUAL_FUNDS.map((f) => (
+              <div key={f.id} className="flex items-center gap-3">
+                <div className="flex-1">
+                  <p className="text-sm font-medium text-gray-700 truncate">{f.name}</p>
+                  <p className="text-xs text-gray-400 font-mono">{f.isin} · {new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }).format(f.initialAmount)}</p>
+                </div>
+                <div className="relative">
+                  <span className="absolute left-3 top-2 text-gray-400 text-sm">€</span>
+                  <input
+                    type="number"
+                    value={actualFundValues[f.id] ?? ''}
+                    onChange={(e) => setActualFundValues((prev) => ({ ...prev, [f.id]: e.target.value }))}
+                    placeholder={String(f.initialAmount)}
+                    className="border border-gray-300 rounded-lg pl-7 pr-3 py-2 text-sm w-36 focus:outline-none focus:ring-2 focus:ring-blue-500 tabular-nums"
+                  />
+                </div>
+              </div>
+            ))}
+            {actualFundsTotal > 0 && (
+              <div className="flex items-center justify-between pt-3 border-t border-gray-200 font-semibold">
+                <span className="text-sm text-gray-700">Total Cartera Actual</span>
+                <span className="text-[#0f2c4f]">
+                  {new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'EUR' }).format(actualFundsTotal)}
+                </span>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Auto-fetch prices */}
       <div className="bg-white border border-gray-200 rounded-xl p-5">
         <SectionHeader
           title="Obtener Precios Automáticamente"
-          subtitle="Consulta el valor liquidativo actual de cada fondo desde Morningstar"
+          subtitle="Consulta el valor liquidativo actual de cada fondo desde Yahoo Finance"
         />
         <div className="flex items-center gap-4 flex-wrap">
           <button

@@ -12,7 +12,7 @@ export async function POST(req: NextRequest) {
 
   try {
     const body = await req.json()
-    const { date, actualTotal, objetivoValues, objetivoTotal } = body
+    const { date, actualTotal, actualFundValues, objetivoValues, objetivoTotal } = body
 
     if (!date) return NextResponse.json({ error: 'Fecha requerida' }, { status: 400 })
 
@@ -30,7 +30,7 @@ export async function POST(req: NextRequest) {
       if (error) throw error
     }
 
-    // Guardar valores individuales por fondo
+    // Guardar valores individuales por fondo (objetivo)
     const fundValues = Object.entries(objetivoValues as Record<string, string>)
       .filter(([, v]) => parseFloat(v) > 0)
       .map(([fund_id, value]) => ({
@@ -43,6 +43,22 @@ export async function POST(req: NextRequest) {
     if (fundValues.length > 0) {
       const { error } = await supabase.from('fund_values').upsert(fundValues)
       if (error) throw error
+    }
+
+    // Guardar valores individuales por fondo (actual)
+    if (actualFundValues && typeof actualFundValues === 'object') {
+      const actualValues = Object.entries(actualFundValues as Record<string, string>)
+        .filter(([, v]) => parseFloat(v) > 0)
+        .map(([fund_id, value]) => ({
+          fund_id,
+          portfolio_id: 'actual',
+          date,
+          value: parseFloat(value),
+        }))
+      if (actualValues.length > 0) {
+        const { error } = await supabase.from('fund_values').upsert(actualValues)
+        if (error) throw error
+      }
     }
 
     return NextResponse.json({ ok: true })
