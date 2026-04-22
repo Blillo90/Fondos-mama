@@ -41,7 +41,7 @@ export default async function CarteraActualPage() {
     getLatestSnapshot('actual'),
   ])
   const initialValue = INITIAL_VALUE
-  const displayTotal = currentTotal ?? funds.reduce((s, f) => s + f.initial_amount, 0) || initialValue
+  const displayTotal = (currentTotal ?? funds.reduce((s, f) => s + f.initial_amount, 0)) || initialValue
   const gainAbs = currentTotal ? currentTotal - initialValue : null
   const gainPct = gainAbs !== null ? (gainAbs / initialValue) * 100 : null
   const weightedReturn = 1.79
