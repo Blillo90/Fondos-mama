@@ -2,6 +2,7 @@ import KpiCard from '@/components/ui/KpiCard'
 import SectionHeader from '@/components/ui/SectionHeader'
 import ProjectionChart from '@/components/charts/ProjectionChart'
 import AllocationPie from '@/components/charts/AllocationPie'
+import { createClient } from '@supabase/supabase-js'
 import {
   PORTFOLIO_ACTUAL,
   PORTFOLIO_OBJETIVO,
@@ -13,9 +14,26 @@ import {
   CLIENT_NAME,
   INITIAL_VALUE,
 } from '@/lib/constants'
-import { AlertTriangle } from 'lucide-react'
+import { AlertTriangle, TrendingUp, TrendingDown, Minus } from 'lucide-react'
 
-export default function Dashboard() {
+async function getLatestSnapshots() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY
+  if (!url || !key) return { actual: null, objetivo: null }
+  const supabase = createClient(url, key)
+  const { data } = await supabase
+    .from('portfolio_snapshots')
+    .select('portfolio_id, total_value, date')
+    .in('portfolio_id', ['actual', 'objetivo'])
+    .order('date', { ascending: false })
+  if (!data) return { actual: null, objetivo: null }
+  const actual = data.find((d) => d.portfolio_id === 'actual') ?? null
+  const objetivo = data.find((d) => d.portfolio_id === 'objetivo') ?? null
+  return { actual, objetivo }
+}
+
+export default async function Dashboard() {
+  const { actual, objetivo } = await getLatestSnapshots()
   const savings10y = PORTFOLIO_OBJETIVO.annualSavings * 10
 
   return (
@@ -32,6 +50,55 @@ export default function Dashboard() {
           <p className="text-xs text-gray-400 mt-1">Inicio: Abril 2026</p>
         </div>
       </div>
+
+      {/* Seguimiento real */}
+      {(actual || objetivo) && (() => {
+        const portfolios = [
+          {
+            label: 'Cartera Actual',
+            data: actual,
+            accent: 'text-[#0f2c4f]',
+            border: 'border-slate-200',
+            bg: 'bg-slate-50',
+          },
+          {
+            label: 'Cartera Objetivo',
+            data: objetivo,
+            accent: 'text-emerald-700',
+            border: 'border-emerald-200',
+            bg: 'bg-emerald-50',
+          },
+        ]
+        return (
+          <div className="grid grid-cols-2 gap-4">
+            {portfolios.map(({ label, data, accent, border, bg }) => {
+              if (!data) return (
+                <div key={label} className={`rounded-xl border ${border} ${bg} p-5`}>
+                  <p className="text-sm font-semibold text-gray-500">{label}</p>
+                  <p className="text-xs text-gray-400 mt-1">Sin datos aún — actualiza desde Admin</p>
+                </div>
+              )
+              const gain = data.total_value - INITIAL_VALUE
+              const gainPct = (gain / INITIAL_VALUE) * 100
+              const Icon = gainPct > 0 ? TrendingUp : gainPct < 0 ? TrendingDown : Minus
+              const gainColor = gainPct > 0 ? 'text-emerald-600' : gainPct < 0 ? 'text-red-500' : 'text-gray-500'
+              return (
+                <div key={label} className={`rounded-xl border ${border} ${bg} p-5`}>
+                  <p className="text-sm font-semibold text-gray-600">{label}</p>
+                  <p className={`text-3xl font-bold mt-1 ${accent}`}>{formatEUR(data.total_value)}</p>
+                  <div className={`flex items-center gap-1.5 mt-1.5 ${gainColor}`}>
+                    <Icon size={15} />
+                    <span className="text-sm font-semibold">
+                      {gainPct >= 0 ? '+' : ''}{gainPct.toFixed(2)}% ({gain >= 0 ? '+' : ''}{formatEUR(gain)})
+                    </span>
+                  </div>
+                  <p className="text-xs text-gray-400 mt-1">vs inicio {formatEUR(INITIAL_VALUE)} · {data.date}</p>
+                </div>
+              )
+            })}
+          </div>
+        )
+      })()}
 
       {/* Alerta urgente */}
       <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex gap-3">
