@@ -3,7 +3,7 @@ import KpiCard from '@/components/ui/KpiCard'
 import FundTable from '@/components/FundTable'
 import AllocationPie from '@/components/charts/AllocationPie'
 import { createClient } from '@supabase/supabase-js'
-import { PORTFOLIO_ACTUAL, ACTUAL_ALLOCATION, formatEUR, formatPct } from '@/lib/constants'
+import { PORTFOLIO_ACTUAL, ACTUAL_ALLOCATION, INITIAL_VALUE, formatEUR, formatPct } from '@/lib/constants'
 import { PortfolioFund } from '@/lib/types'
 import { AlertTriangle } from 'lucide-react'
 
@@ -20,9 +20,30 @@ async function getCartActual(): Promise<PortfolioFund[]> {
   return (data as PortfolioFund[]) ?? []
 }
 
+async function getLatestSnapshot(portfolioId: string): Promise<number | null> {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY
+  if (!url || !key) return null
+  const supabase = createClient(url, key)
+  const { data } = await supabase
+    .from('portfolio_snapshots')
+    .select('total_value, date')
+    .eq('portfolio_id', portfolioId)
+    .order('date', { ascending: false })
+    .limit(1)
+    .single()
+  return data?.total_value ?? null
+}
+
 export default async function CarteraActualPage() {
-  const funds = await getCartActual()
-  const totalValue = funds.reduce((s, f) => s + f.initial_amount, 0)
+  const [funds, currentTotal] = await Promise.all([
+    getCartActual(),
+    getLatestSnapshot('actual'),
+  ])
+  const initialValue = INITIAL_VALUE
+  const displayTotal = currentTotal ?? funds.reduce((s, f) => s + f.initial_amount, 0) || initialValue
+  const gainAbs = currentTotal ? currentTotal - initialValue : null
+  const gainPct = gainAbs !== null ? (gainAbs / initialValue) * 100 : null
   const weightedReturn = 1.79
   const weightedCost = 1.45
 
@@ -52,8 +73,14 @@ export default async function CarteraActualPage() {
           <p className="text-gray-500 mt-1">Banco Sabadell · {PORTFOLIO_ACTUAL.totalFunds} fondos · En proceso de migración</p>
         </div>
         <div className="text-right">
-          <p className="text-sm text-gray-500">Valor inicial</p>
-          <p className="text-2xl font-bold text-[#0f2c4f]">{formatEUR(totalValue || 91664.82)}</p>
+          <p className="text-sm text-gray-500">Valor actual</p>
+          <p className="text-2xl font-bold text-[#0f2c4f]">{formatEUR(displayTotal)}</p>
+          {gainPct !== null && (
+            <p className={`text-sm font-semibold mt-0.5 ${gainPct >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
+              {gainPct >= 0 ? '+' : ''}{gainPct.toFixed(2)}% ({gainAbs! >= 0 ? '+' : ''}{formatEUR(gainAbs!)})
+            </p>
+          )}
+          <p className="text-xs text-gray-400 mt-0.5">Inicial: {formatEUR(initialValue)}</p>
         </div>
       </div>
 

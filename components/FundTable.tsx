@@ -37,10 +37,10 @@ export default function FundTable({ funds, showCagr = true, showSharpe, showTer 
           {funds.map((pf) => (
             <tr key={pf.id} className="border-b border-gray-100 hover:bg-gray-50 transition-colors">
               <td className="py-3 pr-4">
-                <div className="font-medium text-gray-900 truncate max-w-[200px]" title={pf.fund?.name}>
-                  {pf.fund?.name}
+                <div className="font-medium text-gray-900 truncate max-w-[200px]" title={pf.fund?.name ?? pf.fund_id}>
+                  {pf.fund?.name ?? <span className="text-gray-400 italic">{pf.fund_id}</span>}
                 </div>
-                <div className="text-xs text-gray-400 font-mono">{pf.fund?.isin}</div>
+                <div className="text-xs text-gray-400 font-mono">{pf.fund?.isin ?? '—'}</div>
               </td>
               <td className="py-3 pr-4">
                 {pf.fund?.category && (
