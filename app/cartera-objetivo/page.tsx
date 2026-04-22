@@ -3,7 +3,7 @@ import KpiCard from '@/components/ui/KpiCard'
 import FundTable from '@/components/FundTable'
 import AllocationPie from '@/components/charts/AllocationPie'
 import { createClient } from '@supabase/supabase-js'
-import { PORTFOLIO_OBJETIVO, OBJETIVO_ALLOCATION, formatEUR, formatPct } from '@/lib/constants'
+import { PORTFOLIO_OBJETIVO, OBJETIVO_ALLOCATION, INITIAL_VALUE, formatEUR, formatPct } from '@/lib/constants'
 import { PortfolioFund } from '@/lib/types'
 import { CheckCircle2, AlertTriangle, Info } from 'lucide-react'
 
@@ -86,8 +86,29 @@ const fundAnalysis = [
   },
 ]
 
+async function getLatestSnapshot(portfolioId: string): Promise<number | null> {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY
+  if (!url || !key) return null
+  const supabase = createClient(url, key)
+  const { data } = await supabase
+    .from('portfolio_snapshots')
+    .select('total_value')
+    .eq('portfolio_id', portfolioId)
+    .order('date', { ascending: false })
+    .limit(1)
+    .single()
+  return data?.total_value ?? null
+}
+
 export default async function CarteraObjetivoPage() {
-  const funds = await getCartObjetivo()
+  const [funds, currentTotal] = await Promise.all([
+    getCartObjetivo(),
+    getLatestSnapshot('objetivo'),
+  ])
+  const displayTotal = currentTotal ?? funds.reduce((s, f) => s + (f.currentValue ?? f.initial_amount), 0) || INITIAL_VALUE
+  const gainAbs = currentTotal ? currentTotal - INITIAL_VALUE : null
+  const gainPct = gainAbs !== null ? (gainAbs / INITIAL_VALUE) * 100 : null
 
   return (
     <div className="max-w-5xl mx-auto space-y-8">
@@ -97,9 +118,14 @@ export default async function CarteraObjetivoPage() {
           <p className="text-gray-500 mt-1">12 fondos optimizados · Perfil moderado · TER 0.55%</p>
         </div>
         <div className="text-right">
-          <p className="text-sm text-gray-500">Valor objetivo</p>
-          <p className="text-2xl font-bold text-emerald-700">{formatEUR(91664.82)}</p>
-          <p className="text-xs text-gray-400 mt-1">Completada en Oct 2026</p>
+          <p className="text-sm text-gray-500">Valor actual</p>
+          <p className="text-2xl font-bold text-emerald-700">{formatEUR(displayTotal)}</p>
+          {gainPct !== null && (
+            <p className={`text-sm font-semibold mt-0.5 ${gainPct >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
+              {gainPct >= 0 ? '+' : ''}{gainPct.toFixed(2)}% ({gainAbs! >= 0 ? '+' : ''}{formatEUR(gainAbs!)})
+            </p>
+          )}
+          <p className="text-xs text-gray-400 mt-0.5">Inicial: {formatEUR(INITIAL_VALUE)}</p>
         </div>
       </div>
 
