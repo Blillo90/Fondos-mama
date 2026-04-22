@@ -113,6 +113,8 @@ export async function GET() {
     id: string
     name: string
     isin: string
+    portfolio: string
+    initialAmount: number
     nav: number | null
     dailyReturn: number | null
     date: string | null
