@@ -82,24 +82,40 @@ export default function AdminPage() {
       const res = await fetch('/api/fetch-prices')
       if (!res.ok) throw new Error('Error al obtener precios')
       const data = await res.json()
-      const results = data.results as { id: string; name: string; nav: number | null; dailyReturn: number | null; date: string | null; error?: string }[]
-      setFetchResults(results)
-      const newValues: Record<string, string> = {}
+      const results = data.results as { id: string; name: string; nav: number | null; dailyReturn: number | null; date: string | null; portfolio?: string; initialAmount?: number; error?: string }[]
+      setFetchResults(results.filter((r) => r.portfolio === 'objetivo'))
+
+      const newObjetivoValues: Record<string, string> = {}
+      const newActualValues: Record<string, string> = {}
+
       results.forEach((r) => {
-        if (r.nav !== null) {
+        if (r.nav === null) return
+        if (r.portfolio === 'objetivo') {
           const fund = TARGET_FUNDS.find((f) => f.id === r.id)
           if (fund) {
             const prev = parseFloat(objetivoValues[r.id] ?? '')
             if (!isNaN(prev) && prev > 0 && r.dailyReturn !== null) {
-              newValues[r.id] = (prev * (1 + r.dailyReturn / 100)).toFixed(2)
-            } else if (isNaN(prev) || prev === 0) {
-              newValues[r.id] = (91664.82 * fund.weight / 100).toFixed(2)
+              newObjetivoValues[r.id] = (prev * (1 + r.dailyReturn / 100)).toFixed(2)
+            } else if ((isNaN(prev) || prev === 0) && r.initialAmount) {
+              newObjetivoValues[r.id] = r.initialAmount.toFixed(2)
             }
+          }
+        } else if (r.portfolio === 'actual') {
+          const prev = parseFloat(actualFundValues[r.id] ?? '')
+          if (!isNaN(prev) && prev > 0 && r.dailyReturn !== null) {
+            newActualValues[r.id] = (prev * (1 + r.dailyReturn / 100)).toFixed(2)
+          } else if ((isNaN(prev) || prev === 0) && r.initialAmount && r.dailyReturn !== null) {
+            newActualValues[r.id] = (r.initialAmount * (1 + r.dailyReturn / 100)).toFixed(2)
           }
         }
       })
-      if (Object.keys(newValues).length > 0) {
-        setObjetivoValues((prev) => ({ ...prev, ...newValues }))
+
+      if (Object.keys(newObjetivoValues).length > 0) {
+        setObjetivoValues((prev) => ({ ...prev, ...newObjetivoValues }))
+      }
+      if (Object.keys(newActualValues).length > 0) {
+        setActualFundValues((prev) => ({ ...prev, ...newActualValues }))
+        setShowActualFunds(true)
       }
     } catch (e: unknown) {
       setFetchError(e instanceof Error ? e.message : 'Error al obtener precios')
