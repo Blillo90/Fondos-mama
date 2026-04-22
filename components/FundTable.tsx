@@ -7,6 +7,7 @@ interface Props {
   showSharpe?: boolean
   showTer?: boolean
   showRent2025?: boolean
+  showCurrentValue?: boolean
 }
 
 const formatEUR = (v: number) =>
@@ -17,7 +18,7 @@ function ColorDot({ category }: { category: string }) {
   return <span className="inline-block w-2.5 h-2.5 rounded-full mr-2" style={{ backgroundColor: color }} />
 }
 
-export default function FundTable({ funds, showCagr = true, showSharpe, showTer = true, showRent2025 = true }: Props) {
+export default function FundTable({ funds, showCagr = true, showSharpe, showTer = true, showRent2025 = true, showCurrentValue }: Props) {
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-sm">
@@ -31,6 +32,8 @@ export default function FundTable({ funds, showCagr = true, showSharpe, showTer 
             {showSharpe && <th className="text-right py-3 pr-4 font-medium">Sharpe</th>}
             {showTer && <th className="text-right py-3 pr-4 font-medium">TER</th>}
             {showRent2025 && <th className="text-right py-3 font-medium">2025</th>}
+            {showCurrentValue && <th className="text-right py-3 font-medium">Valor actual</th>}
+            {showCurrentValue && <th className="text-right py-3 font-medium">Cambio</th>}
           </tr>
         </thead>
         <tbody>
@@ -88,6 +91,23 @@ export default function FundTable({ funds, showCagr = true, showSharpe, showTer 
                     : '—'}
                 </td>
               )}
+              {showCurrentValue && (() => {
+                const cv = pf.currentValue
+                const diff = cv != null ? cv - pf.initial_amount : null
+                const pct = diff != null ? (diff / pf.initial_amount) * 100 : null
+                return (
+                  <>
+                    <td className="py-3 text-right tabular-nums font-medium text-gray-800">
+                      {cv != null ? formatEUR(cv) : '—'}
+                    </td>
+                    <td className={`py-3 text-right tabular-nums font-medium ${
+                      pct == null ? 'text-gray-400' : pct >= 0 ? 'text-emerald-600' : 'text-red-500'
+                    }`}>
+                      {pct != null ? `${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%` : '—'}
+                    </td>
+                  </>
+                )
+              })()}
             </tr>
           ))}
         </tbody>

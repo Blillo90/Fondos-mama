@@ -12,12 +12,30 @@ async function getCartObjetivo(): Promise<PortfolioFund[]> {
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY
   if (!url || !key) return []
   const supabase = createClient(url, key)
-  const { data } = await supabase
-    .from('portfolio_funds')
-    .select('*, fund:funds(*)')
-    .eq('portfolio_id', 'objetivo')
-    .order('initial_amount', { ascending: false })
-  return (data as PortfolioFund[]) ?? []
+
+  const [{ data: funds }, { data: values }] = await Promise.all([
+    supabase
+      .from('portfolio_funds')
+      .select('*, fund:funds(*)')
+      .eq('portfolio_id', 'objetivo')
+      .order('initial_amount', { ascending: false }),
+    supabase
+      .from('fund_values')
+      .select('fund_id, value, date')
+      .eq('portfolio_id', 'objetivo')
+      .order('date', { ascending: false }),
+  ])
+
+  // Latest value per fund_id
+  const latestByFund: Record<string, number> = {}
+  for (const v of (values ?? [])) {
+    if (!(v.fund_id in latestByFund)) latestByFund[v.fund_id] = v.value
+  }
+
+  return ((funds ?? []) as PortfolioFund[]).map((f) => ({
+    ...f,
+    currentValue: latestByFund[f.fund_id] ?? undefined,
+  }))
 }
 
 const fundAnalysis = [
@@ -190,7 +208,7 @@ export default async function CarteraObjetivoPage() {
       <div className="bg-white rounded-xl border border-gray-200 p-5">
         <SectionHeader title="Composición objetivo · 12 fondos" subtitle="Pesos y datos de rentabilidad histórica" />
         {funds.length > 0 ? (
-          <FundTable funds={funds} showCagr showSharpe showTer showRent2025 />
+          <FundTable funds={funds} showCagr showSharpe showTer showRent2025 showCurrentValue />
         ) : (
           <p className="text-center py-8 text-gray-400 text-sm">
             Conecta Supabase para ver los fondos en tiempo real.

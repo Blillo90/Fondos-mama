@@ -27,6 +27,7 @@ export interface PortfolioFund {
   target_weight: number
   initial_amount: number
   fund?: Fund
+  currentValue?: number
 }
 
 export interface PortfolioSnapshot {
