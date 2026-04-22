@@ -106,7 +106,7 @@ export default async function CarteraObjetivoPage() {
     getCartObjetivo(),
     getLatestSnapshot('objetivo'),
   ])
-  const displayTotal = currentTotal ?? funds.reduce((s, f) => s + (f.currentValue ?? f.initial_amount), 0) || INITIAL_VALUE
+  const displayTotal = (currentTotal ?? funds.reduce((s, f) => s + (f.currentValue ?? f.initial_amount), 0)) || INITIAL_VALUE
   const gainAbs = currentTotal ? currentTotal - INITIAL_VALUE : null
   const gainPct = gainAbs !== null ? (gainAbs / INITIAL_VALUE) * 100 : null
 
