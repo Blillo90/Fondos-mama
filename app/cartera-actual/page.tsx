@@ -58,8 +58,13 @@ export default async function CarteraActualPage() {
     getLatestSnapshot('actual'),
   ])
   const initialValue = INITIAL_VALUE
-  const displayTotal = (currentTotal ?? funds.reduce((s, f) => s + f.initial_amount, 0)) || initialValue
-  const gainAbs = currentTotal ? currentTotal - initialValue : null
+  const updatedCount = funds.filter((f) => f.currentValue != null).length
+  // Use currentValue if available, fall back to initial_amount for non-updated funds
+  const displayTotal = funds.length > 0
+    ? funds.reduce((s, f) => s + (f.currentValue ?? f.initial_amount), 0)
+    : initialValue
+  // Only show gain if at least some funds are updated; otherwise the number is misleading
+  const gainAbs = updatedCount > 0 ? displayTotal - initialValue : null
   const gainPct = gainAbs !== null ? (gainAbs / initialValue) * 100 : null
   const weightedReturn = 1.79
   const weightedCost = 1.45
@@ -97,7 +102,7 @@ export default async function CarteraActualPage() {
               {gainPct >= 0 ? '+' : ''}{gainPct.toFixed(2)}% ({gainAbs! >= 0 ? '+' : ''}{formatEUR(gainAbs!)})
             </p>
           )}
-          <p className="text-xs text-gray-400 mt-0.5">Inicial: {formatEUR(initialValue)}</p>
+          <p className="text-xs text-gray-400 mt-0.5">Inicial: {formatEUR(initialValue)} · {updatedCount}/{funds.length} fondos actualizados</p>
         </div>
       </div>
 
