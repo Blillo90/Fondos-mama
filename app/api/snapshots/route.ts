@@ -56,7 +56,7 @@ export async function POST(req: NextRequest) {
           value: parseFloat(value),
         }))
       if (actualValues.length > 0) {
-        const { error } = await supabase.from('fund_values').upsert(actualValues)
+        const { error } = await supabase.from('fund_values').upsert(actualValues, { onConflict: 'fund_id,portfolio_id,date' })
         if (error) throw error
       }
     }
