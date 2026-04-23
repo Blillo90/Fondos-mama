@@ -1,3 +1,5 @@
+export const dynamic = 'force-dynamic'
+
 import SectionHeader from '@/components/ui/SectionHeader'
 import KpiCard from '@/components/ui/KpiCard'
 import FundTable from '@/components/FundTable'

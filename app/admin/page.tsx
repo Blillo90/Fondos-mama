@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import SectionHeader from '@/components/ui/SectionHeader'
 import { Save, Info, RefreshCw, CheckCircle, AlertCircle, ChevronDown, ChevronUp } from 'lucide-react'
 
@@ -70,6 +70,20 @@ export default function AdminPage() {
   const [fetching, setFetching] = useState(false)
   const [fetchResults, setFetchResults] = useState<{ id: string; name: string; nav: number | null; dailyReturn: number | null; date: string | null; error?: string }[] | null>(null)
   const [fetchError, setFetchError] = useState('')
+
+  useEffect(() => {
+    fetch('/api/latest-fund-values')
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.objetivo && Object.keys(data.objetivo).length > 0) {
+          setObjetivoValues(data.objetivo)
+        }
+        if (data.actual && Object.keys(data.actual).length > 0) {
+          setActualFundValues(data.actual)
+        }
+      })
+      .catch(() => {})
+  }, [])
 
   const objetivoTotal = Object.values(objetivoValues).reduce((s, v) => s + (parseFloat(v) || 0), 0)
   const actualFundsTotal = Object.values(actualFundValues).reduce((s, v) => s + (parseFloat(v) || 0), 0)
