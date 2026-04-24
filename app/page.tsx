@@ -16,24 +16,36 @@ import {
 } from '@/lib/constants'
 import { AlertTriangle, TrendingUp, TrendingDown, Minus } from 'lucide-react'
 
-async function getLatestSnapshots() {
+async function getPortfolioSummary(portfolioId: string) {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY
-  if (!url || !key) return { actual: null, objetivo: null }
+  if (!url || !key) return null
   const supabase = createClient(url, key)
-  const { data } = await supabase
-    .from('portfolio_snapshots')
-    .select('portfolio_id, total_value, date')
-    .in('portfolio_id', ['actual', 'objetivo'])
-    .order('date', { ascending: false })
-  if (!data) return { actual: null, objetivo: null }
-  const actual = data.find((d) => d.portfolio_id === 'actual') ?? null
-  const objetivo = data.find((d) => d.portfolio_id === 'objetivo') ?? null
-  return { actual, objetivo }
+
+  const [{ data: pFunds }, { data: fValues }] = await Promise.all([
+    supabase.from('portfolio_funds').select('fund_id, initial_amount').eq('portfolio_id', portfolioId),
+    supabase.from('fund_values').select('fund_id, value, date').eq('portfolio_id', portfolioId).order('date', { ascending: false }),
+  ])
+  if (!pFunds?.length) return null
+
+  const latestByFund: Record<string, { value: number; date: string }> = {}
+  for (const v of (fValues ?? [])) {
+    if (!(v.fund_id in latestByFund)) latestByFund[v.fund_id] = { value: v.value, date: v.date }
+  }
+
+  const updatedCount = pFunds.filter((f) => f.fund_id in latestByFund).length
+  if (updatedCount === 0) return null
+  const total = pFunds.reduce((s, f) => s + (latestByFund[f.fund_id]?.value ?? f.initial_amount), 0)
+  const latestDate = Object.values(latestByFund).map((v) => v.date).sort().at(-1) ?? null
+
+  return { total_value: total, date: latestDate, updatedCount, totalFunds: pFunds.length }
 }
 
 export default async function Dashboard() {
-  const { actual, objetivo } = await getLatestSnapshots()
+  const [actual, objetivo] = await Promise.all([
+    getPortfolioSummary('actual'),
+    getPortfolioSummary('objetivo'),
+  ])
   const savings10y = PORTFOLIO_OBJETIVO.annualSavings * 10
 
   return (
@@ -92,7 +104,7 @@ export default async function Dashboard() {
                       {gainPct >= 0 ? '+' : ''}{gainPct.toFixed(2)}% ({gain >= 0 ? '+' : ''}{formatEUR(gain)})
                     </span>
                   </div>
-                  <p className="text-xs text-gray-400 mt-1">vs inicio {formatEUR(INITIAL_VALUE)} · {data.date}</p>
+                  <p className="text-xs text-gray-400 mt-1">vs inicio {formatEUR(INITIAL_VALUE)} · {data.date} · {'updatedCount' in data ? `${data.updatedCount}/${data.totalFunds} fondos` : ''}</p>
                 </div>
               )
             })}
