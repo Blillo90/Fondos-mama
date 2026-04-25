@@ -79,7 +79,17 @@ export default function AdminPage() {
           setObjetivoValues(data.objetivo)
         }
         if (data.actual && Object.keys(data.actual).length > 0) {
-          setActualFundValues(data.actual)
+          // Stored values are total €; convert to NAV for funds with participaciones
+          const converted = { ...data.actual }
+          ACTUAL_FUNDS.forEach((f) => {
+            if (f.participaciones && converted[f.id]) {
+              const total = parseFloat(converted[f.id])
+              if (!isNaN(total) && total > 0) {
+                converted[f.id] = (total / f.participaciones).toFixed(4)
+              }
+            }
+          })
+          setActualFundValues(converted)
         }
       })
       .catch(() => {})
