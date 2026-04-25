@@ -20,9 +20,9 @@ const TARGET_FUNDS = [
 ]
 
 const ACTUAL_FUNDS = [
-  { id: 'sabadell-prudente',         name: 'Sabadell Prudente',                       isin: 'ES0111187003', initialAmount: 42977 },
-  { id: 'sabadell-rendimiento',      name: 'Sabadell Rendimiento',                    isin: 'ES0173829039', initialAmount: 13470 },
-  { id: 'sabadell-consolida94',      name: 'Sabadell Consolida 94',                   isin: 'ES0111203008', initialAmount: 10450 },
+  { id: 'sabadell-prudente',         name: 'Sabadell Prudente',                       isin: 'ES0111187003', initialAmount: 42977,  participaciones: 3730.390680 },
+  { id: 'sabadell-rendimiento',      name: 'Sabadell Rendimiento',                    isin: 'ES0173829039', initialAmount: 13470,  participaciones: 1379.743430 },
+  { id: 'sabadell-consolida94',      name: 'Sabadell Consolida 94',                   isin: 'ES0111203008', initialAmount: 10450,  participaciones: 1002.328560 },
   { id: 'sabadell-interes-euro',     name: 'Sabadell Interés Euro',                   isin: 'ES0174403008', initialAmount: 4780 },
   { id: 'sabadell-bonos-euro',       name: 'Sabadell Bonos Euro',                     isin: 'ES0173828007', initialAmount: 3136 },
   { id: 'sabadell-sel-alternativa',  name: 'Sabadell Selección Alternativa',          isin: 'ES0182282014', initialAmount: 2174 },
@@ -86,7 +86,14 @@ export default function AdminPage() {
   }, [])
 
   const objetivoTotal = Object.values(objetivoValues).reduce((s, v) => s + (parseFloat(v) || 0), 0)
-  const actualFundsTotal = Object.values(actualFundValues).reduce((s, v) => s + (parseFloat(v) || 0), 0)
+
+  // For funds with participaciones, the input is NAV; convert to total for display/save
+  const getActualFundTotal = (fund: typeof ACTUAL_FUNDS[0]) => {
+    const v = parseFloat(actualFundValues[fund.id] ?? '')
+    if (isNaN(v) || v <= 0) return 0
+    return fund.participaciones ? v * fund.participaciones : v
+  }
+  const actualFundsTotal = ACTUAL_FUNDS.reduce((s, f) => s + getActualFundTotal(f), 0)
 
   const handleFetchPrices = async () => {
     setFetching(true)
@@ -115,11 +122,24 @@ export default function AdminPage() {
             }
           }
         } else if (r.portfolio === 'actual') {
+          const fund = ACTUAL_FUNDS.find((f) => f.id === r.id)
+          const parts = fund?.participaciones
           const prev = parseFloat(actualFundValues[r.id] ?? '')
-          if (!isNaN(prev) && prev > 0 && r.dailyReturn !== null) {
-            newActualValues[r.id] = (prev * (1 + r.dailyReturn / 100)).toFixed(2)
-          } else if ((isNaN(prev) || prev === 0) && r.initialAmount && r.dailyReturn !== null) {
-            newActualValues[r.id] = (r.initialAmount * (1 + r.dailyReturn / 100)).toFixed(2)
+          if (parts) {
+            // Input is NAV — apply daily return directly to NAV
+            if (!isNaN(prev) && prev > 0 && r.dailyReturn !== null) {
+              newActualValues[r.id] = (prev * (1 + r.dailyReturn / 100)).toFixed(4)
+            } else if ((isNaN(prev) || prev === 0) && r.initialAmount && r.dailyReturn !== null) {
+              const initialNav = r.initialAmount / parts
+              newActualValues[r.id] = (initialNav * (1 + r.dailyReturn / 100)).toFixed(4)
+            }
+          } else {
+            // Input is total €
+            if (!isNaN(prev) && prev > 0 && r.dailyReturn !== null) {
+              newActualValues[r.id] = (prev * (1 + r.dailyReturn / 100)).toFixed(2)
+            } else if ((isNaN(prev) || prev === 0) && r.initialAmount && r.dailyReturn !== null) {
+              newActualValues[r.id] = (r.initialAmount * (1 + r.dailyReturn / 100)).toFixed(2)
+            }
           }
         }
       })
@@ -149,7 +169,15 @@ export default function AdminPage() {
         body: JSON.stringify({
           date,
           actualTotal: actualFundsTotal > 0 ? actualFundsTotal : 0,
-          actualFundValues,
+          // Convert NAV inputs → total € for funds with participaciones
+          actualFundValues: Object.fromEntries(
+            ACTUAL_FUNDS
+              .map((f) => {
+                const total = getActualFundTotal(f)
+                return total > 0 ? [f.id, String(total.toFixed(2))] : null
+              })
+              .filter(Boolean) as [string, string][]
+          ),
           objetivoValues,
           objetivoTotal,
         }),
@@ -219,24 +247,47 @@ export default function AdminPage() {
 
         {showActualFunds && (
           <div className="mt-4 space-y-3 border-t border-gray-100 pt-4">
-            {ACTUAL_FUNDS.map((f) => (
-              <div key={f.id} className="flex items-center gap-3">
-                <div className="flex-1">
-                  <p className="text-sm font-medium text-gray-700 truncate">{f.name}</p>
-                  <p className="text-xs text-gray-400 font-mono">{f.isin} · {new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }).format(f.initialAmount)}</p>
+            {ACTUAL_FUNDS.map((f) => {
+              const isNav = !!f.participaciones
+              const inputVal = actualFundValues[f.id] ?? ''
+              const parsedInput = parseFloat(inputVal)
+              const computedTotal = isNav && !isNaN(parsedInput) && parsedInput > 0
+                ? parsedInput * f.participaciones!
+                : null
+              const placeholderNav = isNav
+                ? (f.initialAmount / f.participaciones!).toFixed(4)
+                : String(f.initialAmount)
+              return (
+                <div key={f.id} className="flex items-center gap-3">
+                  <div className="flex-1">
+                    <p className="text-sm font-medium text-gray-700 truncate">{f.name}</p>
+                    <p className="text-xs text-gray-400 font-mono">
+                      {f.isin}
+                      {isNav
+                        ? ` · ${f.participaciones!.toFixed(2)} part.`
+                        : ` · ${new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }).format(f.initialAmount)}`}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {computedTotal !== null && (
+                      <span className="text-xs text-gray-500 tabular-nums">
+                        = {new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }).format(computedTotal)}
+                      </span>
+                    )}
+                    <div className="relative">
+                      <span className="absolute left-3 top-2 text-gray-400 text-xs">{isNav ? 'VL' : '€'}</span>
+                      <input
+                        type="number"
+                        value={inputVal}
+                        onChange={(e) => setActualFundValues((prev) => ({ ...prev, [f.id]: e.target.value }))}
+                        placeholder={placeholderNav}
+                        className="border border-gray-300 rounded-lg pl-8 pr-3 py-2 text-sm w-36 focus:outline-none focus:ring-2 focus:ring-blue-500 tabular-nums"
+                      />
+                    </div>
+                  </div>
                 </div>
-                <div className="relative">
-                  <span className="absolute left-3 top-2 text-gray-400 text-sm">€</span>
-                  <input
-                    type="number"
-                    value={actualFundValues[f.id] ?? ''}
-                    onChange={(e) => setActualFundValues((prev) => ({ ...prev, [f.id]: e.target.value }))}
-                    placeholder={String(f.initialAmount)}
-                    className="border border-gray-300 rounded-lg pl-7 pr-3 py-2 text-sm w-36 focus:outline-none focus:ring-2 focus:ring-blue-500 tabular-nums"
-                  />
-                </div>
-              </div>
-            ))}
+              )
+            })}
             {actualFundsTotal > 0 && (
               <div className="flex items-center justify-between pt-3 border-t border-gray-200 font-semibold">
                 <span className="text-sm text-gray-700">Total Cartera Actual</span>

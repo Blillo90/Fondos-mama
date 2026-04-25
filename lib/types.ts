@@ -26,6 +26,7 @@ export interface PortfolioFund {
   fund_id: string
   target_weight: number
   initial_amount: number
+  participaciones?: number | null
   fund?: Fund
   currentValue?: number
 }
