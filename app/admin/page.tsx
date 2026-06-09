@@ -68,7 +68,8 @@ export default function AdminPage() {
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState('')
   const [fetching, setFetching] = useState(false)
-  const [fetchResults, setFetchResults] = useState<{ id: string; name: string; nav: number | null; dailyReturn: number | null; date: string | null; error?: string }[] | null>(null)
+  const [fetchResults, setFetchResults] = useState<{ id: string; name: string; isin: string; portfolio: string; nav: number | null; dailyReturn: number | null; date: string | null; source?: string; error?: string }[] | null>(null)
+  const [fetchSummary, setFetchSummary] = useState<{ found: number; total: number; pct: number } | null>(null)
   const [fetchError, setFetchError] = useState('')
 
   useEffect(() => {
@@ -109,12 +110,15 @@ export default function AdminPage() {
     setFetching(true)
     setFetchError('')
     setFetchResults(null)
+    setFetchSummary(null)
     try {
       const res = await fetch('/api/fetch-prices')
       if (!res.ok) throw new Error('Error al obtener precios')
       const data = await res.json()
-      const results = data.results as { id: string; name: string; nav: number | null; dailyReturn: number | null; date: string | null; portfolio?: string; initialAmount?: number; error?: string }[]
-      setFetchResults(results.filter((r) => r.portfolio === 'objetivo'))
+      const results = data.results as { id: string; name: string; isin: string; portfolio: string; initialAmount?: number; nav: number | null; dailyReturn: number | null; date: string | null; source?: string; error?: string }[]
+
+      setFetchResults(results)
+      if (data.summary) setFetchSummary(data.summary)
 
       const newObjetivoValues: Record<string, string> = {}
       const newActualValues: Record<string, string> = {}
@@ -122,33 +126,29 @@ export default function AdminPage() {
       results.forEach((r) => {
         if (r.nav === null) return
         if (r.portfolio === 'objetivo') {
-          const fund = TARGET_FUNDS.find((f) => f.id === r.id)
-          if (fund) {
-            const prev = parseFloat(objetivoValues[r.id] ?? '')
-            if (!isNaN(prev) && prev > 0 && r.dailyReturn !== null) {
-              newObjetivoValues[r.id] = (prev * (1 + r.dailyReturn / 100)).toFixed(2)
-            } else if ((isNaN(prev) || prev === 0) && r.initialAmount) {
-              newObjetivoValues[r.id] = r.initialAmount.toFixed(2)
-            }
+          const prev = parseFloat(objetivoValues[r.id] ?? '')
+          if (!isNaN(prev) && prev > 0 && r.dailyReturn !== null) {
+            newObjetivoValues[r.id] = (prev * (1 + r.dailyReturn / 100)).toFixed(2)
+          } else if ((isNaN(prev) || prev === 0) && r.initialAmount) {
+            newObjetivoValues[r.id] = r.initialAmount.toFixed(2)
           }
         } else if (r.portfolio === 'actual') {
           const fund = ACTUAL_FUNDS.find((f) => f.id === r.id)
           const parts = fund?.participaciones
           const prev = parseFloat(actualFundValues[r.id] ?? '')
           if (parts) {
-            // Input is NAV — apply daily return directly to NAV
             if (!isNaN(prev) && prev > 0 && r.dailyReturn !== null) {
               newActualValues[r.id] = (prev * (1 + r.dailyReturn / 100)).toFixed(4)
             } else if ((isNaN(prev) || prev === 0) && r.initialAmount && r.dailyReturn !== null) {
-              const initialNav = r.initialAmount / parts
-              newActualValues[r.id] = (initialNav * (1 + r.dailyReturn / 100)).toFixed(4)
+              newActualValues[r.id] = ((r.initialAmount / parts) * (1 + r.dailyReturn / 100)).toFixed(4)
+            } else if ((isNaN(prev) || prev === 0) && r.initialAmount) {
+              newActualValues[r.id] = (r.initialAmount / parts).toFixed(4)
             }
           } else {
-            // Input is total €
             if (!isNaN(prev) && prev > 0 && r.dailyReturn !== null) {
               newActualValues[r.id] = (prev * (1 + r.dailyReturn / 100)).toFixed(2)
-            } else if ((isNaN(prev) || prev === 0) && r.initialAmount && r.dailyReturn !== null) {
-              newActualValues[r.id] = (r.initialAmount * (1 + r.dailyReturn / 100)).toFixed(2)
+            } else if ((isNaN(prev) || prev === 0) && r.initialAmount) {
+              newActualValues[r.id] = r.initialAmount.toFixed(2)
             }
           }
         }
@@ -334,31 +334,72 @@ export default function AdminPage() {
           </div>
         )}
 
-        {fetchResults && (
-          <div className="mt-4 space-y-2">
-            {fetchResults.map((r) => (
-              <div key={r.id} className="flex items-center justify-between text-sm border-b border-gray-100 pb-2">
-                <span className="text-gray-700 truncate flex-1">{r.name}</span>
-                {r.nav !== null ? (
-                  <div className="flex items-center gap-3 ml-2">
-                    <span className="font-mono text-gray-900">{r.nav.toFixed(4)} €</span>
-                    {r.dailyReturn !== null && (
-                      <span className={`text-xs font-semibold ${r.dailyReturn >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
-                        {r.dailyReturn >= 0 ? '+' : ''}{r.dailyReturn.toFixed(2)}%
-                      </span>
-                    )}
-                    <CheckCircle size={14} className="text-emerald-500" />
+        {fetchResults && (() => {
+          const objetivoRes = fetchResults.filter(r => r.portfolio === 'objetivo')
+          const actualRes = fetchResults.filter(r => r.portfolio === 'actual')
+          const sourceBadge = (s?: string) => {
+            if (s === 'morningstar') return <span className="text-[10px] px-1.5 py-0.5 rounded bg-orange-100 text-orange-700 font-medium">MS</span>
+            if (s === 'yahoo') return <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-100 text-blue-700 font-medium">YF</span>
+            return null
+          }
+          const FundRow = ({ r }: { r: typeof fetchResults[0] }) => (
+            <div className="flex items-center justify-between text-sm border-b border-gray-100 pb-1.5">
+              <span className="text-gray-700 truncate flex-1 text-xs">{r.name}</span>
+              {r.nav !== null ? (
+                <div className="flex items-center gap-2 ml-2 shrink-0">
+                  <span className="font-mono text-gray-900 text-xs">{r.nav.toFixed(4)}</span>
+                  {r.dailyReturn !== null && (
+                    <span className={`text-[10px] font-semibold tabular-nums ${r.dailyReturn >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                      {r.dailyReturn >= 0 ? '+' : ''}{r.dailyReturn.toFixed(2)}%
+                    </span>
+                  )}
+                  {sourceBadge(r.source)}
+                  <CheckCircle size={13} className="text-emerald-500" />
+                </div>
+              ) : (
+                <div className="flex items-center gap-1.5 ml-2 shrink-0">
+                  <span className="text-[10px] text-gray-400">N/D</span>
+                  <AlertCircle size={13} className="text-amber-400" />
+                </div>
+              )}
+            </div>
+          )
+          return (
+            <div className="mt-4 space-y-4">
+              {fetchSummary && (
+                <div className="flex items-center gap-2 text-xs">
+                  <span className={`font-semibold ${fetchSummary.pct >= 70 ? 'text-emerald-600' : 'text-amber-600'}`}>
+                    {fetchSummary.found}/{fetchSummary.total} fondos encontrados ({fetchSummary.pct}%)
+                  </span>
+                  <span className="text-gray-400">·</span>
+                  <span className="text-gray-400 flex items-center gap-1">
+                    <span className="px-1.5 py-0.5 rounded bg-orange-100 text-orange-700 font-medium text-[10px]">MS</span> Morningstar
+                    <span className="ml-1 px-1.5 py-0.5 rounded bg-blue-100 text-blue-700 font-medium text-[10px]">YF</span> Yahoo Finance
+                  </span>
+                </div>
+              )}
+              <div className="grid grid-cols-2 gap-6">
+                <div>
+                  <p className="text-xs font-semibold text-gray-500 mb-2 uppercase tracking-wide">Cartera Objetivo</p>
+                  <div className="space-y-1.5">
+                    {objetivoRes.map(r => <FundRow key={r.id} r={r} />)}
                   </div>
-                ) : (
-                  <span className="text-xs text-gray-400 ml-2">No disponible</span>
-                )}
+                </div>
+                <div>
+                  <p className="text-xs font-semibold text-gray-500 mb-2 uppercase tracking-wide">
+                    Cartera Actual <span className="text-gray-400 normal-case font-normal">({actualRes.filter(r => r.nav !== null).length}/{actualRes.length})</span>
+                  </p>
+                  <div className="space-y-1.5 max-h-64 overflow-y-auto pr-1">
+                    {actualRes.map(r => <FundRow key={r.id} r={r} />)}
+                  </div>
+                </div>
               </div>
-            ))}
-            <p className="text-xs text-gray-400 pt-1">
-              Los valores de la cartera objetivo se han actualizado en los campos de abajo usando el cambio diario.
-            </p>
-          </div>
-        )}
+              <p className="text-xs text-gray-400">
+                Los campos de arriba se han actualizado con el cambio diario. Revisa y pulsa Guardar.
+              </p>
+            </div>
+          )
+        })()}
       </div>
 
       {/* Cartera Objetivo */}
