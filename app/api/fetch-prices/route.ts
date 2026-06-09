@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 
 export const dynamic = 'force-dynamic'
+export const maxDuration = 55 // seconds (Vercel hobby limit is 60s)
 
 const TARGET_FUNDS = [
   { id: 'nb-short-duration',         name: 'NB Short Duration Bond',         isin: 'IE00BFZMJT78', portfolio: 'objetivo', initialAmount: 18988 },
@@ -61,9 +62,11 @@ const ALL_FUNDS = [...TARGET_FUNDS, ...ACTUAL_FUNDS]
 
 const FETCH_HEADERS = {
   'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-  'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,application/json,*/*;q=0.8',
-  'Accept-Language': 'es-ES,es;q=0.9,en;q=0.8',
+  'Accept': 'application/json, text/html, */*',
+  'Accept-Language': 'es-ES,es;q=0.9',
 }
+
+const REQUEST_TIMEOUT_MS = 6000
 
 type PriceResult = {
   nav: number | null
@@ -73,13 +76,18 @@ type PriceResult = {
   error?: string
 }
 
+function safeFetch(url: string, options?: RequestInit): Promise<Response> {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
+  return fetch(url, { ...options, signal: controller.signal })
+    .finally(() => clearTimeout(timer))
+}
+
 function parseEsNumber(s: string): number {
   const cleaned = s.trim().replace(/\s/g, '')
-  // "1.234,56" → thousands dot, decimal comma
   if (cleaned.includes('.') && cleaned.includes(',')) {
     return parseFloat(cleaned.replace(/\./g, '').replace(',', '.'))
   }
-  // "11,4321" → decimal comma only
   if (/^\d+,\d+$/.test(cleaned)) return parseFloat(cleaned.replace(',', '.'))
   return parseFloat(cleaned)
 }
@@ -91,75 +99,60 @@ function parseDateES(dateStr: string): string | null {
 }
 
 // -----------------------------------------------
-// SOURCE 1: Morningstar ES — search + snapshot HTML
+// SOURCE 1: Morningstar ES
+// Step A: search by ISIN → get Morningstar SecId
+// Step B: screener JSON API → get NAV + daily return
 // -----------------------------------------------
 async function fetchMorningstar(isin: string): Promise<PriceResult> {
+  const fail = (error: string): PriceResult => ({ nav: null, dailyReturn: null, date: null, source: 'morningstar', error })
+
   try {
-    const searchRes = await fetch(
+    // Step A — search
+    const searchRes = await safeFetch(
       `https://www.morningstar.es/es/util/SecuritySearch.ashx?rows=5&securityTypes=FO%2CETF&term=${encodeURIComponent(isin)}&languageId=es-ES`,
-      { headers: FETCH_HEADERS, cache: 'no-store' }
+      { headers: FETCH_HEADERS }
     )
-    if (!searchRes.ok) return { nav: null, dailyReturn: null, date: null, source: 'morningstar', error: `Search ${searchRes.status}` }
+    if (!searchRes.ok) return fail(`Search ${searchRes.status}`)
 
     let searchData: Array<{ i: string; n: string; t: string }>
-    try { searchData = await searchRes.json() } catch {
-      return { nav: null, dailyReturn: null, date: null, source: 'morningstar', error: 'Search JSON error' }
-    }
+    try { searchData = await searchRes.json() } catch { return fail('Search JSON') }
 
     const mstarId = searchData?.[0]?.i
-    if (!mstarId) return { nav: null, dailyReturn: null, date: null, source: 'morningstar', error: 'Not in Morningstar' }
+    if (!mstarId) return fail('Not in Morningstar')
 
-    await new Promise(r => setTimeout(r, 100))
-
-    const snapRes = await fetch(
-      `https://www.morningstar.es/es/funds/snapshot/snapshot.aspx?id=${mstarId}&tab=0`,
-      { headers: FETCH_HEADERS, cache: 'no-store' }
+    // Step B — screener API (returns JSON, avoids Cloudflare-protected HTML pages)
+    const screenerRes = await safeFetch(
+      `https://lt.morningstar.com/api/rest.svc/klr5sMGoes/security/screener` +
+      `?outputType=json` +
+      `&filterDataPoints=SecId,Name,NAV,NAVDate,GBRReturnD1` +
+      `&filters=SecId%3AIN%3A${mstarId}` +
+      `&page=1&pageSize=1` +
+      `&currencyId=EUR&languageId=es-ES`,
+      { headers: FETCH_HEADERS }
     )
-    if (!snapRes.ok) return { nav: null, dailyReturn: null, date: null, source: 'morningstar', error: `Snapshot ${snapRes.status}` }
 
-    const html = await snapRes.text()
+    if (screenerRes.ok) {
+      let screenerData: { rows?: Array<{ SecId?: string; NAV?: number; NAVDate?: string; GBRReturnD1?: number }> }
+      try { screenerData = await screenerRes.json() } catch { screenerData = {} }
 
-    // NAV patterns — Morningstar ES wraps the price in a <p id="Col0NaV"> or similar
-    const navPatterns = [
-      /id="Col0NaV"[^>]*>\s*([\d.,]+)\s*</,
-      /Col0NaV">([\d.,]+)</,
-      /"price"[^>]*>\s*([\d.,]+)\s*</,
-    ]
-    let nav: number | null = null
-    for (const pat of navPatterns) {
-      const m = html.match(pat)
-      if (m) {
-        const n = parseEsNumber(m[1])
-        if (!isNaN(n) && n > 0.001) { nav = n; break }
+      const row = screenerData?.rows?.[0]
+      if (row?.NAV && row.NAV > 0) {
+        const date = row.NAVDate
+          ? (parseDateES(row.NAVDate) ?? new Date().toISOString().split('T')[0])
+          : new Date().toISOString().split('T')[0]
+        return {
+          nav: row.NAV,
+          dailyReturn: row.GBRReturnD1 ?? null,
+          date,
+          source: 'morningstar',
+        }
       }
     }
 
-    // Daily return (1-day % change)
-    const retPatterns = [
-      /id="Col0DReturn1D"[^>]*>\s*([-\d.,]+)\s*</,
-      /id="Col0DReturn1W"[^>]*>\s*([-\d.,]+)\s*</,
-    ]
-    let dailyReturn: number | null = null
-    for (const pat of retPatterns) {
-      const m = html.match(pat)
-      if (m) {
-        const n = parseEsNumber(m[1])
-        if (!isNaN(n)) { dailyReturn = n; break }
-      }
-    }
-
-    // NAV date
-    let date: string | null = null
-    const dateMatch = html.match(/id="Col0NaVDate"[^>]*>\s*(\d{2}\/\d{2}\/\d{4})\s*</)
-                   ?? html.match(/(\d{2}\/\d{2}\/\d{4})/)
-    if (dateMatch) date = parseDateES(dateMatch[1])
-    if (!date) date = new Date().toISOString().split('T')[0]
-
-    if (nav === null) return { nav: null, dailyReturn: null, date: null, source: 'morningstar', error: 'NAV not parsed' }
-
-    return { nav, dailyReturn, date, source: 'morningstar' }
+    return fail('No NAV in screener')
   } catch (e) {
-    return { nav: null, dailyReturn: null, date: null, source: 'morningstar', error: String(e) }
+    const msg = e instanceof Error ? e.message : String(e)
+    return fail(msg.includes('abort') ? 'Timeout' : msg)
   }
 }
 
@@ -167,12 +160,14 @@ async function fetchMorningstar(isin: string): Promise<PriceResult> {
 // SOURCE 2: Yahoo Finance
 // -----------------------------------------------
 async function fetchYahoo(isin: string): Promise<PriceResult> {
+  const fail = (error: string): PriceResult => ({ nav: null, dailyReturn: null, date: null, source: 'yahoo', error })
+
   try {
-    const searchRes = await fetch(
+    const searchRes = await safeFetch(
       `https://query1.finance.yahoo.com/v1/finance/search?q=${isin}&lang=es-ES&region=ES&quotesCount=6&newsCount=0&listsCount=0`,
-      { headers: FETCH_HEADERS, cache: 'no-store' }
+      { headers: FETCH_HEADERS }
     )
-    if (!searchRes.ok) return { nav: null, dailyReturn: null, date: null, source: 'yahoo', error: `Search ${searchRes.status}` }
+    if (!searchRes.ok) return fail(`Search ${searchRes.status}`)
 
     const searchJson = await searchRes.json()
     const quotes: Array<{ symbol: string; quoteType?: string }> = searchJson?.quotes ?? []
@@ -180,17 +175,17 @@ async function fetchYahoo(isin: string): Promise<PriceResult> {
                 ?? quotes.find(q => q.quoteType === 'ETF')
                 ?? quotes[0]
     const symbol = match?.symbol
-    if (!symbol) return { nav: null, dailyReturn: null, date: null, source: 'yahoo', error: 'No symbol' }
+    if (!symbol) return fail('No symbol')
 
-    const quoteRes = await fetch(
+    const quoteRes = await safeFetch(
       `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?interval=1d&range=5d`,
-      { headers: FETCH_HEADERS, cache: 'no-store' }
+      { headers: FETCH_HEADERS }
     )
-    if (!quoteRes.ok) return { nav: null, dailyReturn: null, date: null, source: 'yahoo', error: `Quote ${quoteRes.status}` }
+    if (!quoteRes.ok) return fail(`Quote ${quoteRes.status}`)
 
     const quoteData = await quoteRes.json()
     const meta = quoteData?.chart?.result?.[0]?.meta
-    if (!meta) return { nav: null, dailyReturn: null, date: null, source: 'yahoo', error: 'No meta' }
+    if (!meta) return fail('No meta')
 
     const nav: number | null = meta.regularMarketPrice ?? null
     const prev: number | null = meta.chartPreviousClose ?? meta.previousClose ?? null
@@ -200,24 +195,21 @@ async function fetchYahoo(isin: string): Promise<PriceResult> {
 
     return { nav, dailyReturn, date, source: 'yahoo' }
   } catch (e) {
-    return { nav: null, dailyReturn: null, date: null, source: 'yahoo', error: String(e) }
+    const msg = e instanceof Error ? e.message : String(e)
+    return fail(msg.includes('abort') ? 'Timeout' : msg)
   }
 }
 
 // -----------------------------------------------
-// Concurrency-limited execution
+// Concurrency-limited runner
 // -----------------------------------------------
-async function withConcurrency<T, R>(
-  items: T[],
-  fn: (item: T) => Promise<R>,
-  limit = 4
-): Promise<R[]> {
+async function withConcurrency<T, R>(items: T[], fn: (item: T) => Promise<R>, limit = 6): Promise<R[]> {
   const results: R[] = new Array(items.length)
   let idx = 0
   async function worker() {
     while (idx < items.length) {
       const i = idx++
-      results[i] = await fn(items[i])
+      try { results[i] = await fn(items[i]) } catch { /* individual errors are already caught inside fn */ }
     }
   }
   await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker))
@@ -229,8 +221,6 @@ type FundInput = (typeof ALL_FUNDS)[0]
 async function fetchFundPrice(fund: FundInput) {
   const mstar = await fetchMorningstar(fund.isin)
   if (mstar.nav !== null) return { ...fund, ...mstar }
-
-  await new Promise(r => setTimeout(r, 150))
 
   const yahoo = await fetchYahoo(fund.isin)
   if (yahoo.nav !== null) return { ...fund, ...yahoo }
@@ -246,14 +236,22 @@ async function fetchFundPrice(fund: FundInput) {
 }
 
 export async function GET() {
-  const results = await withConcurrency(ALL_FUNDS, fetchFundPrice, 4)
+  try {
+    const results = await withConcurrency(ALL_FUNDS, fetchFundPrice, 6)
 
-  const found = results.filter(r => r.nav !== null).length
-  const total = results.length
+    const found = results.filter(r => r?.nav !== null).length
+    const total = ALL_FUNDS.length
 
-  return NextResponse.json({
-    results,
-    summary: { found, total, pct: Math.round((found / total) * 100) },
-    fetchedAt: new Date().toISOString(),
-  })
+    return NextResponse.json({
+      results: results.map(r => r ?? null),
+      summary: { found, total, pct: Math.round((found / total) * 100) },
+      fetchedAt: new Date().toISOString(),
+    })
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e)
+    return NextResponse.json(
+      { results: [], summary: { found: 0, total: ALL_FUNDS.length, pct: 0 }, fetchedAt: new Date().toISOString(), fatalError: msg },
+      { status: 200 } // always 200 so admin page can show partial results
+    )
+  }
 }

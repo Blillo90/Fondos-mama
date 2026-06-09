@@ -115,10 +115,11 @@ export default function AdminPage() {
       const res = await fetch('/api/fetch-prices')
       if (!res.ok) throw new Error('Error al obtener precios')
       const data = await res.json()
-      const results = data.results as { id: string; name: string; isin: string; portfolio: string; initialAmount?: number; nav: number | null; dailyReturn: number | null; date: string | null; source?: string; error?: string }[]
+      const results: { id: string; name: string; isin: string; portfolio: string; initialAmount?: number; nav: number | null; dailyReturn: number | null; date: string | null; source?: string; error?: string }[] = Array.isArray(data.results) ? data.results.filter(Boolean) : []
 
       setFetchResults(results)
       if (data.summary) setFetchSummary(data.summary)
+      if (!results.length) { setFetchError(data.fatalError ? `Error servidor: ${data.fatalError}` : 'Sin resultados'); return }
 
       const newObjetivoValues: Record<string, string> = {}
       const newActualValues: Record<string, string> = {}
