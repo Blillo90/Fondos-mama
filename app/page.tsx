@@ -2,6 +2,7 @@ import KpiCard from '@/components/ui/KpiCard'
 import SectionHeader from '@/components/ui/SectionHeader'
 import ProjectionChart from '@/components/charts/ProjectionChart'
 import AllocationPie from '@/components/charts/AllocationPie'
+import PortfolioGrowthChart, { GrowthPoint } from '@/components/charts/PortfolioGrowthChart'
 import { createClient } from '@supabase/supabase-js'
 import {
   PORTFOLIO_ACTUAL,
@@ -41,10 +42,33 @@ async function getPortfolioSummary(portfolioId: string) {
   return { total_value: total, date: latestDate, updatedCount, totalFunds: pFunds.length }
 }
 
+async function getPortfolioHistory(): Promise<GrowthPoint[]> {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY
+  if (!url || !key) return []
+  const supabase = createClient(url, key)
+
+  const { data } = await supabase
+    .from('portfolio_snapshots')
+    .select('portfolio_id, date, total_value')
+    .order('date', { ascending: true })
+
+  const byDate = new Map<string, GrowthPoint>()
+  for (const row of data ?? []) {
+    const point: GrowthPoint = byDate.get(row.date) ?? { date: row.date }
+    if (row.portfolio_id === 'actual') point.actual = row.total_value
+    else if (row.portfolio_id === 'objetivo') point.objetivo = row.total_value
+    byDate.set(row.date, point)
+  }
+
+  return Array.from(byDate.values())
+}
+
 export default async function Dashboard() {
-  const [actual, objetivo] = await Promise.all([
+  const [actual, objetivo, history] = await Promise.all([
     getPortfolioSummary('actual'),
     getPortfolioSummary('objetivo'),
+    getPortfolioHistory(),
   ])
   const savings10y = PORTFOLIO_OBJETIVO.annualSavings * 10
 
@@ -111,6 +135,23 @@ export default async function Dashboard() {
           </div>
         )
       })()}
+
+      {/* Evolución real de la cartera */}
+      <div>
+        <SectionHeader
+          title="Evolución real de la cartera"
+          subtitle="Valor total registrado en cada actualización desde Admin"
+        />
+        <div className="bg-white rounded-xl border border-gray-200 p-5">
+          {history.length >= 2 ? (
+            <PortfolioGrowthChart data={history} />
+          ) : (
+            <p className="text-sm text-gray-400 text-center py-16">
+              Aún no hay suficientes registros para mostrar la evolución. Se irá completando con cada actualización desde Admin.
+            </p>
+          )}
+        </div>
+      </div>
 
       {/* Alerta urgente */}
       <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex gap-3">
