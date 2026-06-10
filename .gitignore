@@ -39,3 +39,10 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# documentos bancarios personales (PII - no subir al repo)
+/nuevos informes/
+/REVISIÓN IDONEIDAD.pdf
+/FONDOS DE INVERSIÓN.pdf
+/INFORME DE POSICIONES*.pdf
+/prompt.md

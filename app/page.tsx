@@ -17,6 +17,8 @@ import {
 } from '@/lib/constants'
 import { AlertTriangle, TrendingUp, TrendingDown, Minus } from 'lucide-react'
 
+export const dynamic = 'force-dynamic'
+
 async function getPortfolioSummary(portfolioId: string) {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY

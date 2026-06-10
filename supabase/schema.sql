@@ -287,6 +287,12 @@ INSERT INTO transfers (month_num, phase, from_fund_id, to_fund_id, planned_amoun
   (6, 'C', 'sabadell-prudente', 'man-alpha-alternative', 489.91, 'pending'),
   (6, 'C', 'sabadell-prudente', 'atlas-infrastructure', 48.26, 'pending');
 
+-- HISTÓRICO REAL CARTERA ACTUAL (Informe de posiciones Sabadell, Dic 2024 - Sep 2025)
+INSERT INTO portfolio_snapshots (portfolio_id, date, total_value, daily_change, daily_change_pct) VALUES
+  ('actual', '2024-12-31', 87229.42, 0, 0),
+  ('actual', '2025-09-30', 89103.05, 1873.63, 2.1481)
+ON CONFLICT (portfolio_id, date) DO NOTHING;
+
 -- SNAPSHOT INICIAL (Abril 2026)
 INSERT INTO portfolio_snapshots (portfolio_id, date, total_value, daily_change, daily_change_pct) VALUES
   ('actual', '2026-04-21', 91664.82, 0, 0),
