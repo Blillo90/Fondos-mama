@@ -78,6 +78,18 @@ CREATE TABLE IF NOT EXISTS transfers (
 );
 
 -- =============================================
+-- ROW LEVEL SECURITY
+-- La app solo usa la service_role key (server-side), que ignora RLS.
+-- Se activa sin policies para bloquear cualquier acceso vía anon/authenticated.
+-- =============================================
+ALTER TABLE funds ENABLE ROW LEVEL SECURITY;
+ALTER TABLE portfolios ENABLE ROW LEVEL SECURITY;
+ALTER TABLE portfolio_funds ENABLE ROW LEVEL SECURITY;
+ALTER TABLE portfolio_snapshots ENABLE ROW LEVEL SECURITY;
+ALTER TABLE fund_values ENABLE ROW LEVEL SECURITY;
+ALTER TABLE transfers ENABLE ROW LEVEL SECURITY;
+
+-- =============================================
 -- DATOS SEED
 -- =============================================
 
