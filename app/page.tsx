@@ -3,6 +3,7 @@ import SectionHeader from '@/components/ui/SectionHeader'
 import ProjectionChart from '@/components/charts/ProjectionChart'
 import AllocationPie from '@/components/charts/AllocationPie'
 import PortfolioGrowthChart, { GrowthPoint } from '@/components/charts/PortfolioGrowthChart'
+import ObjetivoFundChanges, { FundChange } from '@/components/ObjetivoFundChanges'
 import { createClient } from '@supabase/supabase-js'
 import {
   PORTFOLIO_ACTUAL,
@@ -66,11 +67,53 @@ async function getPortfolioHistory(): Promise<GrowthPoint[]> {
   return Array.from(byDate.values())
 }
 
+async function getObjetivoFundChanges(): Promise<{ changes: FundChange[]; previousDate: string | null; latestDate: string | null }> {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY
+  if (!url || !key) return { changes: [], previousDate: null, latestDate: null }
+  const supabase = createClient(url, key)
+
+  const [{ data: pFunds }, { data: values }] = await Promise.all([
+    supabase.from('portfolio_funds').select('fund_id, fund:funds(name)').eq('portfolio_id', 'objetivo'),
+    supabase.from('fund_values').select('fund_id, value, date').eq('portfolio_id', 'objetivo').order('date', { ascending: false }),
+  ])
+  if (!pFunds?.length || !values?.length) return { changes: [], previousDate: null, latestDate: null }
+
+  const nameById = new Map(pFunds.map((f) => [f.fund_id, (f.fund as { name?: string } | null)?.name ?? f.fund_id]))
+
+  const byFund = new Map<string, { date: string; value: number }[]>()
+  for (const v of values) {
+    const arr = byFund.get(v.fund_id) ?? []
+    arr.push({ date: v.date, value: v.value })
+    byFund.set(v.fund_id, arr)
+  }
+
+  const changes: FundChange[] = []
+  let latestDate: string | null = null
+  let previousDate: string | null = null
+  for (const [fund_id, history] of byFund) {
+    if (history.length < 2) continue
+    const [latest, previous] = history
+    if (!latestDate || latest.date > latestDate) latestDate = latest.date
+    if (!previousDate || previous.date > previousDate) previousDate = previous.date
+    changes.push({
+      fund_id,
+      name: nameById.get(fund_id) ?? fund_id,
+      change: latest.value - previous.value,
+      changePct: previous.value !== 0 ? ((latest.value - previous.value) / previous.value) * 100 : 0,
+    })
+  }
+
+  changes.sort((a, b) => b.changePct - a.changePct)
+  return { changes, previousDate, latestDate }
+}
+
 export default async function Dashboard() {
-  const [actual, objetivo, history] = await Promise.all([
+  const [actual, objetivo, history, objetivoChanges] = await Promise.all([
     getPortfolioSummary('actual'),
     getPortfolioSummary('objetivo'),
     getPortfolioHistory(),
+    getObjetivoFundChanges(),
   ])
   const savings10y = PORTFOLIO_OBJETIVO.annualSavings * 10
 
@@ -150,6 +193,27 @@ export default async function Dashboard() {
           ) : (
             <p className="text-sm text-gray-400 text-center py-16">
               Aún no hay suficientes registros para mostrar la evolución. Se irá completando con cada actualización desde Admin.
+            </p>
+          )}
+        </div>
+      </div>
+
+      {/* Movimientos Cartera Objetivo */}
+      <div>
+        <SectionHeader
+          title="Movimientos Cartera Objetivo"
+          subtitle="Qué fondos han subido y bajado desde la última actualización"
+        />
+        <div className="bg-white rounded-xl border border-gray-200 p-5">
+          {objetivoChanges.changes.length > 0 && objetivoChanges.previousDate && objetivoChanges.latestDate ? (
+            <ObjetivoFundChanges
+              changes={objetivoChanges.changes}
+              previousDate={objetivoChanges.previousDate}
+              latestDate={objetivoChanges.latestDate}
+            />
+          ) : (
+            <p className="text-sm text-gray-400 text-center py-16">
+              Aún no hay dos actualizaciones registradas para comparar. Se mostrará tras la segunda actualización desde Admin.
             </p>
           )}
         </div>
